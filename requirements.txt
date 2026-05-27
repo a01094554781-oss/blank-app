@@ -1,4 +1,635 @@
-streamlit
-pandas
-numpy
-scikit-learn
+import { useState, useEffect } from 'react';
+import { DOCUMENT_ITEMS, FAQ_ITEMS, DocumentItem } from './data';
+import { 
+  FileText, 
+  ExternalLink, 
+  Copy, 
+  Check, 
+  AlertCircle, 
+  ChevronDown, 
+  ChevronUp, 
+  Search, 
+  CheckCircle2, 
+  RotateCcw, 
+  Share2, 
+  FileBadge, 
+  HelpCircle,
+  ShieldAlert,
+  SlidersHorizontal,
+  Info,
+  Layers,
+  ArrowRight
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+
+export default function App() {
+  // --- Persistent State Initialization ---
+  const [completedMap, setCompletedMap] = useState<Record<number, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('public-docs-checklist-v2');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'ssnRequired' | 'incomplete' | 'completed'>('all');
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [bulkCopied, setBulkCopied] = useState(false);
+  const [faqOpenState, setFaqOpenState] = useState<Record<number, boolean>>({
+    0: true // Open the first FAQ by default for accessibility
+  });
+
+  // --- Save checklist history to LocalStorage ---
+  useEffect(() => {
+    localStorage.setItem('public-docs-checklist-v2', JSON.stringify(completedMap));
+  }, [completedMap]);
+
+  // --- Document completion toggle ---
+  const handleToggleComplete = (id: number) => {
+    setCompletedMap(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  // --- Reset all completions ---
+  const handleResetProgress = () => {
+    if (window.confirm('모든 발급 진행 상황을 초기화하시겠습니까?')) {
+      setCompletedMap({});
+    }
+  };
+
+  // --- Single Copy to Clipboard ---
+  const handleCopyLink = (text: string, id: number) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }).catch((err) => {
+      console.warn('링크 복사 실패: ', err);
+    });
+  };
+
+  // --- Bulk Copy All Links Together ---
+  const handleCopyAllLinks = () => {
+    const header = "📋 [정부/대법원 공공문서 발급 서류 및 다이렉트 바로가기 주소 모음]\n" +
+                   "※ 중요: 대법원 및 병적증명서는 '주민등록번호 뒷자리 공개' 필수 선택 요망!\n\n" +
+                   "-----------------------------------------\n\n";
+    
+    const body = DOCUMENT_ITEMS.map(item => {
+      let suffix = '';
+      if (item.requiredSsnInfo) {
+        suffix = '\n⚠️ [필수 확인] 신청 시 "주민등록번호 뒷자리 공개" 항목을 반드시 체크하세요!';
+      }
+      return `${item.sequence}. ${item.title}\n   • 발급기관: ${item.issuer}\n   • 주소: ${item.url}${suffix}`;
+    }).join('\n\n');
+
+    const footer = "\n\n-----------------------------------------\n본 주소 목록은 본인 발급 업무 확인을 돕고자 생성된 링크입니다.";
+
+    navigator.clipboard.writeText(header + body + footer).then(() => {
+      setBulkCopied(true);
+      setTimeout(() => setBulkCopied(false), 2000);
+    }).catch(err => {
+      console.warn('전체 복사 실패: ', err);
+    });
+  };
+
+  // --- Toggle individual FAQ accordion ---
+  const handleToggleFaq = (index: number) => {
+    setFaqOpenState(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
+
+  // --- Compute Progress Stats ---
+  const totalCount = DOCUMENT_ITEMS.length;
+  const completedCount = DOCUMENT_ITEMS.filter(item => completedMap[item.id]).length;
+  const remainingCount = totalCount - completedCount;
+  const completionPercentage = Math.round((completedCount / totalCount) * 100);
+
+  // --- Filter and Search matching ---
+  const filteredItems = DOCUMENT_ITEMS.filter(item => {
+    // 1. Keyword match (Title, Category, Issuer)
+    const matchesSearch = 
+      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.issuer.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.tag.toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    // 2. Tab selection match
+    if (filterType === 'ssnRequired') {
+      return item.requiredSsnInfo;
+    }
+    if (filterType === 'incomplete') {
+      return !completedMap[item.id];
+    }
+    if (filterType === 'completed') {
+      return !!completedMap[item.id];
+    }
+    return true; // 'all'
+  });
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-emerald-100 selection:text-emerald-900 pb-24">
+      
+      {/* Visual Header Grid & Pattern Details */}
+      <header className="relative bg-white border-b border-slate-200 overflow-hidden py-10 px-4 md:px-8">
+        {/* Subtle geometric background patterns */}
+        <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] opacity-70 pointer-events-none" />
+        <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-50 rounded-full filter blur-3xl opacity-40 -mr-20 -mt-20 pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-50 rounded-full filter blur-3xl opacity-30 -ml-20 -mb-20 pointer-events-none" />
+
+        <div className="max-w-6xl mx-auto relative z-10">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            
+            {/* Title Block */}
+            <div className="space-y-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <Layers className="w-3.5 h-3.5" />
+                공공 행정 업무 연동 포털
+              </span>
+              <h1 id="main-title" className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900">
+                제출 서류 및 신원조사 <span className="text-emerald-600 underline decoration-emerald-200 decoration-wavy">발급 센터</span>
+              </h1>
+              <p className="text-slate-500 text-sm md:text-base max-w-2xl leading-relaxed">
+                각종 제출 의무가 있는 신원조사, 크레딧포유, 민원 서류를 <strong>인증 단계로 바로 점프</strong>하여 무료 발급 및 제출 준비를 돕는 간편 포털입니다. 클릭 시 즉시 주소로 이동합니다.
+              </p>
+            </div>
+
+            {/* Quick Actions Panel */}
+            <div className="flex flex-wrap items-center gap-3 self-start md:self-center">
+              <button
+                id="btn-copy-all"
+                onClick={handleCopyAllLinks}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-900 hover:bg-slate-800 text-white transition-all shadow-sm active:scale-95"
+              >
+                {bulkCopied ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span>전체 주소 복사됨!</span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-4 h-4 text-slate-300" />
+                    <span>전체 주소 일괄 복사</span>
+                  </>
+                )}
+              </button>
+              
+              <button
+                id="btn-reset-progress"
+                onClick={handleResetProgress}
+                disabled={completedCount === 0}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
+                  completedCount > 0 
+                  ? 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50 hover:text-red-500 hover:border-red-200 cursor-pointer' 
+                  : 'border-slate-100 text-slate-300 bg-slate-50/50 cursor-not-allowed'
+                }`}
+                title="진척도 초기화"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>체크 비우기</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Gamified Stat Progress Engine */}
+          <div className="mt-8 grid grid-cols-1 sm:grid-cols-4 gap-4 p-5 rounded-2xl bg-slate-50 border border-slate-200/80">
+            <div className="sm:col-span-1 flex flex-col justify-center">
+              <div className="text-xs font-medium text-slate-400 uppercase tracking-widest">발급 완료 현황</div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-slate-900">{completedCount}</span>
+                <span className="text-slate-400">/</span>
+                <span className="text-lg font-medium text-slate-500">{totalCount} 개 서류 완료</span>
+              </div>
+            </div>
+
+            <div className="sm:col-span-3 flex flex-col justify-center space-y-2">
+              <div className="flex justify-between text-xs font-semibold">
+                <span className="text-slate-500">실시간 준비 완료율</span>
+                <span className="text-emerald-700">{completionPercentage}%</span>
+              </div>
+              
+              {/* Complex Responsive Progress Bar */}
+              <div className="w-full bg-slate-200 h-3 rounded-full overflow-hidden p-[2px]">
+                <div 
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${completionPercentage}%` }}
+                />
+              </div>
+
+              <div className="flex justify-between items-center text-[11px] text-slate-400">
+                <span className="flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                  체크 항목은 컴퓨터를 종료해도 저장됩니다.
+                </span>
+                <span>{remainingCount > 0 ? `${remainingCount}개 미발급` : '🎉 모든 제출 준비 완료!'}</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </header>
+
+      {/* Main Core Content Container Grid */}
+      <main className="max-w-6xl mx-auto px-4 md:px-8 mt-10">
+
+        {/* Dynamic Critical Requirements Banner */}
+        <div className="bg-amber-50 border-l-4 border-amber-500 rounded-r-2xl p-5 mb-8 shadow-sm">
+          <div className="flex gap-4">
+            <div className="bg-amber-100 p-2.5 rounded-lg text-amber-700 h-fit">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <span className="text-amber-700">[필독] 주민등록번호 끝자리 보임 처리 중요 지침</span>
+                <span className="animate-pulse bg-amber-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">주목!</span>
+              </h3>
+              <p className="text-slate-600 text-sm leading-relaxed mt-1">
+                아래 발급 리스트 중 <span className="font-extrabold text-amber-800 underline underline-offset-2">3번 대법원 기본증명서</span>, <span className="font-extrabold text-amber-800 underline underline-offset-2">4번 병적증명서</span>, <span className="font-extrabold text-amber-800 underline underline-offset-2">5번 대법원 가족관계증명서</span>를 신청하여 제출하시는 경우, 반드시 설정창 내의 <strong>'주민등록번호 뒷자리 공개여부'를 [전체 공개]</strong>로 지정하여 출력하셔야 최종 절차에서 오차 없이 접수 완료됩니다. 일반 등본 형태의 기본(비공개) 출력 시 심사에서 불합격 반려 사유가 됩니다.
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-2 text-xs">
+                <span className="bg-white/80 text-amber-900 px-2 py-1 rounded border border-amber-200">기본증명서(상세) ➔ 공개 필수</span>
+                <span className="bg-white/80 text-amber-900 px-2 py-1 rounded border border-amber-200">병적증명서(상세) ➔ 공개 필수</span>
+                <span className="bg-white/80 text-amber-900 px-2 py-1 rounded border border-amber-200">가족관계증명서(상세) ➔ 공개 필수</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Toolbar: Search, Filters, Stats Summary */}
+        <section className="bg-white rounded-2xl border border-slate-200 p-4 mb-8">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+            
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <input
+                id="search-input"
+                type="text"
+                placeholder="서류 이름, 기관, 키워드로 검색 (예: 대법원, 신용, 병적...)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 focus:border-slate-300 focus:bg-white text-slate-900 text-sm rounded-xl pl-10 pr-4 py-2.5 outline-none transition-all focus:ring-2 focus:ring-emerald-100"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 hover:text-slate-600 bg-slate-200/50 hover:bg-slate-200 px-1.5 py-0.5 rounded"
+                >
+                  지우기
+                </button>
+              )}
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200/60">
+              <button
+                id="filter-all"
+                onClick={() => setFilterType('all')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  filterType === 'all' 
+                  ? 'bg-white text-slate-900 shadow-sm' 
+                  : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                전체 보기 ({DOCUMENT_ITEMS.length})
+              </button>
+              
+              <button
+                id="filter-ssn-required"
+                onClick={() => setFilterType('ssnRequired')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  filterType === 'ssnRequired' 
+                  ? 'bg-amber-100 text-amber-900 shadow-sm' 
+                  : 'text-amber-700/80 hover:text-amber-900 hover:bg-amber-50'
+                }`}
+              >
+                ⚠️ 주민번호 공개 대상 (3)
+              </button>
+              
+              <button
+                id="filter-incomplete"
+                onClick={() => setFilterType('incomplete')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  filterType === 'incomplete' 
+                  ? 'bg-white text-slate-900 shadow-sm' 
+                  : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                미완료 ({DOCUMENT_ITEMS.filter(item => !completedMap[item.id]).length})
+              </button>
+
+              <button
+                id="filter-completed"
+                onClick={() => setFilterType('completed')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  filterType === 'completed' 
+                  ? 'bg-emerald-100 text-emerald-900 shadow-sm' 
+                  : 'text-emerald-700/80 hover:text-emerald-900 hover:bg-emerald-50'
+                }`}
+              >
+                완료 ({completedCount})
+              </button>
+            </div>
+
+          </div>
+        </section>
+
+        {/* Dynamic Empty Search State */}
+        {filteredItems.length === 0 && (
+          <div className="bg-white border border-slate-200 rounded-3xl p-12 text-center max-w-xl mx-auto my-10 shadow-sm">
+            <div className="bg-slate-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto text-slate-400 mb-4">
+              <SlidersHorizontal className="w-5 h-5" />
+            </div>
+            <h4 className="font-bold text-slate-900 text-lg">조건에 맞는 서류가 없습니다.</h4>
+            <p className="text-slate-500 text-sm mt-2">
+              입력하신 검색어 '<span className="text-amber-600 font-semibold">{searchQuery}</span>' 또는 선택 필터 조건을 확인해보시고 필터를 초기화해 보세요.
+            </p>
+            <div className="mt-5 flex justify-center gap-3">
+              <button 
+                onClick={() => { setSearchQuery(''); setFilterType('all'); }}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium transition-all"
+              >
+                검색 및 필터 초기화
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Core Links Board - Staggered Responsive Layout */}
+        <section className="grid grid-cols-1 gap-6">
+          <AnimatePresence mode="popLayout">
+            {filteredItems.map((item) => {
+              const isChecked = !!completedMap[item.id];
+              const isCopied = copiedId === item.id;
+
+              return (
+                <motion.div
+                  key={item.id}
+                  id={`doc-card-${item.id}`}
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.2 }}
+                  layout
+                  className={`relative rounded-2xl border bg-white transition-all overflow-hidden ${
+                    isChecked 
+                    ? 'border-emerald-200 shadow-[0_4px_16px_rgba(16,185,129,0.06)]' 
+                    : 'border-slate-200 hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(148,163,184,0.12)]'
+                  }`}
+                >
+                  
+                  {/* Card Background Overlay For Completed/Checked item */}
+                  {isChecked && (
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rotate-45 translate-x-12 -translate-y-12 pointer-events-none rounded-full" />
+                  )}
+
+                  <div className="p-6 md:p-8">
+                    
+                    {/* Upper Metadata Row */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                      
+                      {/* Left Block: Serial Sequence Pill & Classification */}
+                      <div className="flex items-center gap-2">
+                        <span className={`w-7 h-7 flex items-center justify-center font-extrabold text-xs rounded-full border ${
+                          isChecked 
+                          ? 'bg-emerald-500 text-white border-emerald-500' 
+                          : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}>
+                          {item.sequence}
+                        </span>
+                        
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                          item.category === 'security' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' :
+                          item.category === 'credit' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                          item.category === 'military' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
+                          'bg-cyan-50 text-cyan-700 border border-cyan-100'
+                        }`}>
+                          {item.categoryLabel}
+                        </span>
+
+                        <span className="text-xs text-slate-400 font-medium">
+                          소관 기관: {item.issuer}
+                        </span>
+                      </div>
+
+                      {/* Right Block: Direct Checklist Completion Check */}
+                      <button
+                        id={`btn-complete-toggle-${item.id}`}
+                        onClick={() => handleToggleComplete(item.id)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                          isChecked
+                          ? 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600'
+                          : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Check className={`w-3.5 h-3.5 ${isChecked ? 'stroke-[3]' : 'text-slate-300'}`} />
+                        <span>{isChecked ? '발급 완료됨' : '발급 전'}</span>
+                      </button>
+
+                    </div>
+
+                    {/* Main Document Description */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2.5">
+                        <h2 className="text-xl font-bold tracking-tight text-slate-900 group-hover:text-emerald-600">
+                          {item.title}
+                        </h2>
+                        {item.requiredSsnInfo && (
+                          <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded">
+                            주민번호 뒷자리 공개 필수
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-emerald-700/90 text-xs font-semibold leading-none">
+                        {item.subtitle}
+                      </p>
+                      <p className="text-slate-600 text-[13px] md:text-sm leading-relaxed pt-1.5">
+                        {item.description}
+                      </p>
+                    </div>
+
+                    {/* Highly Targeted Alert/Warning Block for Required Ssn Information */}
+                    {item.requiredSsnInfo && (
+                      <div className="mt-4 p-3 bg-amber-50/60 border border-amber-200 rounded-xl flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                        <div className="text-xs font-medium text-amber-800 leading-normal">
+                          <strong className="font-extrabold text-amber-900">뒷자리 노출 지침:</strong> 상세 본(상세형)으로 선택 후 발급 직전 주민등록번호 전체 노출(별표 해제) 조항을 명확하게 동의 처리하십시오.
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tips and Guides Segment */}
+                    <div className="mt-5 p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                        <Info className="w-3.5 h-3.5 text-slate-400" />
+                        <span>발급 시 유의사항 및 미세 팁</span>
+                      </div>
+                      <ul className="space-y-1.5">
+                        {item.tips.map((tip, idx) => (
+                          <li key={idx} className="text-xs text-slate-500 flex items-start gap-1 leading-relaxed">
+                            <span className="text-emerald-500 shrink-0 select-none">▪</span>
+                            <span>{tip}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Interactive Action Control Area */}
+                    <div className="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-5 border-t border-slate-100">
+                      
+                      {/* Main Navigation Hyperlink */}
+                      <a
+                        id={`anchor-go-${item.id}`}
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm text-center transition-all shadow-sm ${
+                          isChecked 
+                          ? 'bg-slate-150 hover:bg-slate-200 text-slate-700 bg-slate-100' 
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-[0_4px_12px_rgba(16,185,129,0.2)]'
+                        }`}
+                      >
+                        <span>{item.tag} 사이트 바로가기</span>
+                        <ExternalLink className="w-4 h-4 opacity-80" />
+                      </a>
+
+                      {/* Utility Copy URL Address */}
+                      <button
+                        id={`btn-copy-${item.id}`}
+                        onClick={() => handleCopyLink(item.url, item.id)}
+                        className={`inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl text-xs font-bold transition-all border ${
+                          isCopied 
+                          ? 'border-emerald-300 text-emerald-700 bg-emerald-50' 
+                          : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50 hover:text-slate-800'
+                        }`}
+                        title="직접 웹 주소 복사하기"
+                      >
+                        {isCopied ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>복사 완료!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>주소 복사</span>
+                          </>
+                        )}
+                      </button>
+
+                    </div>
+
+                    {/* Interactive URL Indicator */}
+                    <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 font-mono px-1">
+                      <span className="truncate max-w-[280px] sm:max-w-md" title={item.url}>
+                        원 주소: {item.url}
+                      </span>
+                      <span>URL Secure Link</span>
+                    </div>
+
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </section>
+
+        {/* Dynamic Empty State for generic filters */}
+        {DOCUMENT_ITEMS.length > 0 && filteredItems.length > 0 && (
+          <div className="text-center mt-6 text-xs text-slate-400">
+            총 {filteredItems.length}개의 하이퍼링크가 리스팅되었습니다. 주소를 클릭하시면 공인 발급 사이트로 즉시 워프합니다.
+          </div>
+        )}
+
+        {/* Comprehensive FAQ Panel */}
+        <section className="mt-20 bg-white rounded-3xl border border-slate-200/90 overflow-hidden shadow-sm">
+          
+          {/* FAQ Header Banner */}
+          <div className="bg-slate-900 px-6 py-8 md:px-10 text-white relative overflow-hidden">
+            <div className="absolute inset-0 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:12px_12px] opacity-10 pointer-events-none" />
+            <div className="relative z-10 flex items-center gap-3">
+              <div className="bg-slate-800 p-2 rounded-xl text-emerald-400">
+                <HelpCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-lg md:text-xl">자주 묻는 질문 및 이용 가이드 (FAQ)</h3>
+                <p className="text-slate-400 text-xs mt-1">
+                  공공 서류를 안전하게 신청, 출력, 취합할 수 있도록 돕는 실질 비결입니다.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Accordion List Body */}
+          <div className="divide-y divide-slate-100">
+            {FAQ_ITEMS.map((faq, idx) => {
+              const isOpen = !!faqOpenState[idx];
+              return (
+                <div key={idx} className="transition-colors hover:bg-slate-50/50">
+                  <button
+                    id={`btn-faq-toggle-${idx}`}
+                    onClick={() => handleToggleFaq(idx)}
+                    className="w-full flex items-center justify-between gap-4 px-6 py-5 text-left font-bold text-slate-900 text-sm md:text-base outline-none focus:bg-slate-50"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="text-emerald-500 font-mono text-sm leading-none">Q.</span>
+                      <span>{faq.question}</span>
+                    </span>
+                    {isOpen ? (
+                      <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                    )}
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {isOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-6 pb-6 text-slate-600 text-xs md:text-sm leading-relaxed pl-12 border-t border-slate-100/50 pt-2 bg-slate-50/40">
+                          {faq.answer}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+
+        </section>
+
+        {/* Footer info blocks */}
+        <section className="mt-12 bg-emerald-500/5 rounded-2xl border border-emerald-500/10 p-6 text-center max-w-3xl mx-auto">
+          <div className="flex flex-col items-center gap-2">
+            <div className="text-emerald-700 font-bold text-sm tracking-tight flex items-center gap-1.5">
+              <Info className="w-4 h-4" />
+              보안 및 개인정보 보호 안내
+            </div>
+            <p className="text-slate-500 text-xs leading-relaxed max-w-2xl">
+              본 서비스는 대법원 전자가족관계시스템, 정부24, 크레딧포유 등 공식 발급처의 인증 주소로 이동하는 하이퍼링크 모음집일 뿐이며, 이용자의 어떠한 공인인증서 비밀번호, 신분 등록증 번호, 금융 거래 데이터도 직접 수집하거나 매개하지 않습니다. 안심하고 안전하게 공식 웹사이트로 전환하여 진행하십시오.
+            </p>
+          </div>
+        </section>
+
+      </main>
+
+      {/* Persistent Tiny floating helper representing premium aesthetic pairings */}
+      <footer className="mt-20 text-center text-xs text-slate-400 pb-10">
+        <p>© 2026 공공 행정 서류 간편 이동 서비스. All direct anchors are active.</p>
+      </footer>
+
+    </div>
+  );
+}
